@@ -58,9 +58,24 @@ Required constants:
   ];
   ```
 
+Optional constants:
+- `PRINTAGO_TIMEZONE` – Override the timezone used for time-based features (e.g., `PRINTAGO_NOTIFY_WINDOW`).
+  - Provide an IANA timezone string like `"America/Toronto"`, `"America/Chicago"`, or `"UTC"`.
+  - Set to `null` to use the WordPress Site Timezone (Settings → General → Timezone). This is the default.
+  - Examples:
+    - `const PRINTAGO_TIMEZONE = "America/Toronto";`
+    - `const PRINTAGO_TIMEZONE = null; // use site timezone`
+- `PRINTAGO_NOTIFY_WINDOW` – Limit when notifications are sent (evaluated in `PRINTAGO_TIMEZONE` if set; otherwise in the site timezone).
+  - Set to `null` to allow notifications at all times (default).
+  - Or set to a two-item array of 24-hour times `["HH:MM", "HH:MM"]` to define the allowed window.
+  - Windows that cross midnight are supported. Examples:
+    - `const PRINTAGO_NOTIFY_WINDOW = ["09:00", "21:00"];` (9 AM to 9 PM)
+    - `const PRINTAGO_NOTIFY_WINDOW = ["22:00", "06:00"];` (10 PM through 6 AM)
+
 Notes:
 - The plugin requires `Content-Type: application/json` and the `X-API-Key` header to match `PRINTAGO_WEBHOOK_API_KEY`.
 - Composer autoloading: If `vendor/autoload.php` is present, it will be loaded so the `twilio/sdk` classes are available.
+ - Timezone resolution order for time-based logic: `PRINTAGO_TIMEZONE` (if set and valid) → WordPress Site Timezone → server default as a last resort.
 
 ## Usage
 - Endpoint: `POST /wp-json/printago/v1/webhook`

@@ -34,6 +34,86 @@ function printago_webhook(WP_REST_Request $request): void
         require_once __DIR__ . '/vendor/autoload.php';
     }
 
+    // Evaluate notification window. If configured and current time is outside the
+    // allowed window, skip sending any notifications.
+    if (!function_exists('printago_is_within_notify_window')) {
+        function printago_is_within_notify_window(): bool
+        {
+            // If not defined or explicitly null, allow notifications at any time.
+            if (!defined('PRINTAGO_NOTIFY_WINDOW') || PRINTAGO_NOTIFY_WINDOW === null) {
+                return true;
+            }
+
+            $window = PRINTAGO_NOTIFY_WINDOW;
+            if (!is_array($window) || count($window) !== 2) {
+                error_log('PRINTAGO_NOTIFY_WINDOW misconfigured; expected ["HH:MM","HH:MM"] or null. Defaulting to always allow.');
+                return true;
+            }
+
+            [$startStr, $endStr] = $window;
+            // Basic validation of format HH:MM (24-hour)
+            $start = DateTime::createFromFormat('H:i', (string)$startStr);
+            $end   = DateTime::createFromFormat('H:i', (string)$endStr);
+
+            if (!$start || !$end) {
+                error_log('PRINTAGO_NOTIFY_WINDOW contains invalid time(s). Defaulting to always allow.');
+                return true;
+            }
+
+            $startParts = explode(':', $start->format('H:i'));
+            $endParts   = explode(':', $end->format('H:i'));
+            $startSec = ((int)$startParts[0]) * 3600 + ((int)$startParts[1]) * 60;
+            $endSec   = ((int)$endParts[0]) * 3600 + ((int)$endParts[1]) * 60;
+
+            // Determine current time in configured timezone (PRINTAGO_TIMEZONE) if provided,
+            // otherwise use the WordPress site timezone.
+            $h = null;
+            $m = null;
+            if (defined('PRINTAGO_TIMEZONE') && PRINTAGO_TIMEZONE) {
+                try {
+                    $tz = new DateTimeZone((string)PRINTAGO_TIMEZONE);
+                    $dt = new DateTime('now', $tz);
+                    $h = (int)$dt->format('H');
+                    $m = (int)$dt->format('i');
+                } catch (Exception $e) {
+                    if (function_exists('error_log')) {
+                        error_log('PRINTAGO_TIMEZONE invalid or unsupported. Falling back to WordPress timezone.');
+                    }
+                }
+            }
+
+            if ($h === null || $m === null) {
+                // Fallback: WordPress site timezone (or server time if WP helpers unavailable)
+                $nowTs = function_exists('current_time') ? current_time('timestamp') : time();
+                $h = function_exists('wp_date') ? (int)wp_date('H', $nowTs) : (int)date('H', $nowTs);
+                $m = function_exists('wp_date') ? (int)wp_date('i', $nowTs) : (int)date('i', $nowTs);
+            }
+
+            $nowSec = $h * 3600 + $m * 60;
+
+            if ($startSec === $endSec) {
+                // Ambiguous config; treat as always allow to avoid missing alerts
+                return true;
+            }
+
+            if ($startSec < $endSec) {
+                // Normal window: start <= now < end
+                return ($nowSec >= $startSec) && ($nowSec < $endSec);
+            } else {
+                // Overnight window (e.g., 22:00–06:00): now >= start OR now < end
+                return ($nowSec >= $startSec) || ($nowSec < $endSec);
+            }
+        }
+    }
+
+    if (!printago_is_within_notify_window()) {
+        // Optional: log skipped notification
+        if (function_exists('error_log')) {
+            error_log('Printago webhook notification skipped: outside PRINTAGO_NOTIFY_WINDOW.');
+        }
+        return;
+    }
+
     $from   = PRINTAGO_WEBHOOK_FROM;
     $to     = PRINTAGO_WEBHOOK_RECIPIENTS;
 
